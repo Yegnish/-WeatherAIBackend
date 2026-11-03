@@ -16,38 +16,54 @@ app.post('/ai-suggestion', async (req, res) => {
   const { weather, aqi } = req.body;
 
   try {
-    const prompt = `Give me a short 2-line health/outdoor suggestion for this weather:
-    Temperature: ${weather.temp}°C
-    Condition: ${weather.description}
-    AQI: ${aqi}`;
+   const apiKey = process.env.GEMINI_API_KEY;
 
-    const response = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_API_KEY,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      }
-    );
+if (!apiKey) {
+  throw new Error("GEMINI_API_KEY is missing");
+}
 
-    const data = await response.json();
+const response = await fetch(
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [{ text: prompt }]
+        }
+      ]
+    })
+  }
+);
 
-    // Robust extraction
-    let suggestion = 'No suggestion available';
-    if (data?.candidates?.length > 0) {
-      const parts = data.candidates[0].content?.parts;
-      if (parts && parts.length > 0 && parts[0].text) {
-        suggestion = parts[0].text.trim();
-      }
-    }
+const data = await response.json();
 
-    // Force only 2 lines max
-    const twoLines = suggestion.split('\n').filter(line => line.trim() !== '').slice(0, 2).join(' ');
+console.log("Gemini HTTP status:", response.status);
 
-    console.log("Gemini suggestion:", twoLines);
-    res.json({ suggestion: twoLines });
+if (!response.ok) {
+  console.error("Gemini API error:", data);
+  throw new Error(data.error?.message || "Gemini API request failed");
+}
+
+console.log("Gemini response:", JSON.stringify(data));
+
+const suggestion = data?.candidates?.[0]?.content?.parts
+  ?.map(part => part.text || "")
+  .join(" ")
+  .trim();
+
+if (!suggestion) {
+  console.log("Prompt feedback:", data.promptFeedback);
+  throw new Error("Gemini returned no text");
+}
+
+res.json({
+  suggestion: suggestion.split("\n").filter(Boolean).slice(0, 2).join(" ")
+});
 
   } catch (err) {
     console.error('Gemini API error:', err);
